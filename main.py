@@ -1,7 +1,5 @@
-"""
-This test will initialize the display using displayio and draw a solid green
-background, a smaller purple rectangle, and some yellow text.
-"""
+# Hypercube Active Filament Sensor
+
 import gc
 
 import board
@@ -13,80 +11,301 @@ from adafruit_display_text import label
 from adafruit_featherwing import minitft_featherwing
 from adafruit_bitmap_font import bitmap_font
 
+from digitalio import DigitalInOut, Direction, Pull
+
 minitft = minitft_featherwing.MiniTFTFeatherWing()
 display = minitft.display
 
-# Make the display context
-splash = displayio.Group(max_size=10)
-display.show(splash)
+machine_name_y = 13
+sensor_label_y = 47
+label_text_y 67
+error_message_y = 67
 
-color_group = displayio.Group(max_size=1, scale=40, x=0, y=0)
-color_bitmap = displayio.Bitmap(4, 2, 1)
-color_palette = displayio.Palette(1)
-color_palette[0] = 0xFF1F1F
+sensor_digit_offset = -7
 
-bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette, x=0, y=0)
+machine_defs = [ \
+    [[ 0,  0,  0,  0,  0, -1], "** NO TOOL **"], \
+    [[ 0,  0,  1,  0,  0, -1], "V6"], \
+    [[ 0,  0,  1,  0,  0, -1], "Volcano"], \
+    [[ 0,  0,  0,  0,  0, -1], "Laser"], \
+    [[ 1,  1,  1,  1,  0, -1], "Kraken"], \
+    [[-1, -1, -1, -1, -1,  1], "Zesty"], \
+    [[ 0,  0,  1,  0,  0, -1], "Super Volcano"], \
+    [[-1, -1, -1, -1, -1, -1], "invalid"], \
+    [[ 1,  1,  1,  1,  1, -1], "Diamond Fullcolor"], \
+    [[-1, -1, -1, -1, -1,  1], "Titan Aero"], \
+    [[-1, -1, -1, -1, -1,  1], "Dyze Design"], \
+    [[-1, -1, -1, -1, -1, -1], "invalid"], \
+    [[-1, -1, -1, -1, -1, -1], "invalid"], \
+    [[-1, -1, -1, -1, -1, -1], "invalid"], \
+    [[-1, -1, -1, -1, -1, -1], "invalid"], \
+    [[-1, -1, -1, -1, -1, -1], "Nozzle Setup"]]
 
-color_group.append(bg_sprite)
-splash.append(color_group)
+sensor_pins = [ \
+    [board.A0, "1", -2], \
+    [board.A1, "2", -1], \
+    [board.A2, "3", 0], \
+    [board.A3, "4", 1], \
+    [board.A4, "5", 2], \
+    [board.A5, "Auxilary", 0]]
 
-# Draw a smaller inner rectangle
-inner_group = displayio.Group(max_size=1, scale=30, x=20, y=10)
-inner_bitmap = displayio.Bitmap(4, 2, 1)
-inner_palette = displayio.Palette(1)
-inner_palette[0] = 0xAA0088 # Purple
+id_pins = [board.MI, board.RX, board.TX, board.D4]
 
-inner_sprite = displayio.TileGrid(inner_bitmap, pixel_shader=inner_palette, x=0, y=0)
+output_pin = board.D2
 
-inner_group.append(inner_sprite)
-splash.append(inner_group)
+#---------------------------------------
+class BetterGroup(displayio.Group):
+    def __init__(self, hidden=False, **kwargs):
+        self.__hidden = False
+        super().__init__(**kwargs)
+        self.hidden = hidden
 
-# Draw a label
-labelX = 10
-labelY = 10
-xDir = 1
-yDir = 1
+    @property
+    def hidden(self):
+        return self.__hidden
 
-text_group = displayio.Group(max_size=2, scale=1, x=labelX, y=labelY)
-text = "Hello World!"
-font = bitmap_font.load_font("/fonts/HelveticaNeue-Bold-24.bdf")
-text_area = label.Label(font, text=text, color=0xFFFFFF)
-text_group.append(text_area) # Subgroup for text scaling
-splash.append(text_group)
+    @hidden.setter
+    def hidden(self, value):
+        if value != self.__hidden:
+            self.__hidden = value
+            self.x = self.x
 
-while True:
-    buttons = minitft.buttons
+    def _hide_offset(self):
+        if self.__hidden:
+            return 1000
+        else:
+            return 0
 
-    if buttons.right:
-        print("Button RIGHT!")
+    @property
+    def x(self):
+        return super(BetterGroup,self).x % 1000
 
-    if buttons.down:
-        print("Button DOWN!")
+    @x.setter
+    def x(self, value):
+        super(BetterGroup, self.__class__).x.fset(self, (value % 1000) + self._hide_offset())
 
-    if buttons.left:
-        print("Button LEFT!")
+class BetterLabel(label.Label):
+    def __init__(self, hidden=False, **kwargs):
+        self.__hidden = False
+        super().__init__(**kwargs)
+        self.hidden = hidden
+		self.center_on_x(display.width//2)
 
-    if buttons.up:
-        print("Button UP!")
+	def center_on_x(self, center_x):
+		x, y, w, h = self.bounding_box()
+		self.x = center_x - w // 2;
 
-    if buttons.select:
-        print("Button SELECT!")
+    @property
+    def hidden(self):
+        return self.__hidden
 
-    if buttons.a:
-        print("Button A!")
+    @hidden.setter
+    def hidden(self, value):
+        if value != self.__hidden:
+            self.__hidden = value
+            self.x = self.x
 
-    if buttons.b:
-        print("Button B!")
+    def _hide_offset(self):
+        if self.__hidden:
+            return 1000
+        else:
+            return 0
 
-    labelX = labelX + xDir
-    labelY = labelY + yDir
-    if (labelX > 150 or labelX < 10):
-        xDir = -xDir
-    if (labelY > 70 or labelY < 10):
-        yDir = -yDir
+    @property
+    def x(self):
+        return super(BetterLabel, self).x % 1000
 
-    text_group.x = labelX
-    text_group.y = labelY
+    @x.setter
+    def x(self, value):
+        super(BetterLabel, self.__class__).x.fset(self, (value % 1000) + self._hide_offset())
 
-    time.sleep(0.1)
-    pass
+    def bounding_box(self):
+        x, y, w, h = super().bounding_box()
+        w -= 2 * x
+        return x, y, w, h
+
+class Digit(BetterLabel):
+    def __init__(self, text="*", active=True, error=False, **kwargs):
+        self.__active = active
+        self.__error = error
+        super().__init__(text, max_glyphs=len(text)+1, color=self._current_color(), **kwargs)
+
+        x, y, w, h = self.bounding_box()
+
+        self.border_palette = displayio.Palette(2)
+        self.border_palette[0] = 0x000000
+        self.border_palette[1] = self._border_color()
+
+        border_bitmap = FrameBitmap(w+6, h+6, thickness=2)
+        border_sprite = displayio.TileGrid(border_bitmap, pixel_shader=self.border_palette, x=-3, y=-3)
+        self.append(border_sprite)
+
+    @property
+    def active(self):
+        return self.__active
+
+    @active.setter
+    def active(self, value):
+        self.__active = value
+        self._update_color()
+
+    @property
+    def error(self):
+        return self.__error
+
+    @error.setter
+    def error(self, value):
+        self.__error = value
+        self._update_color()
+
+    def _current_color(self):
+        if self.__error:
+            return 0xFF0000
+        elif self.__active:
+            return 0xFFFFFF
+        else:
+            return 0x808080
+
+    def _border_color(self):
+        if self.__error:
+            return 0xFF0000
+        else:
+            return 0x000000
+
+    def _update_color(self):
+        self.color = self._current_color()
+        self.border_palette[1] = self._border_color()
+
+class SolidBitmap(object):
+    def __init__(self, width=display.width, height=display.height):
+        self.width = width
+        self.height = height
+        self.value_count = 1
+
+	def __getitem__(self, key):
+		return 0
+
+class FrameBitmap(object):
+    def __init__(self, width=1, height=1, thickness=2):
+        self.width = width
+        self.height = height
+        self.thickness = thickness
+        self.value_count = 2
+
+    def get_value(x, y):
+        if x < thickness or x >= width-thickness or y < thickness or y >= height-thickness:
+            return 1
+        else:
+            return 0
+
+	def __getitem__(self, key):
+		if isinstance(key, int):
+            return self.get_value(key % self.width, key // self.width)
+		elif isinstance(key, tuple) and len(key) == 2:
+			return self.get_value(key[0], key[1])
+		else:
+			return 0
+
+#---------------------------------------
+if __name__ == '__main__':
+    id_inputs = []
+    for pin in id_pins:
+        new_input = DigitalInOut(pin)
+        new_input.direction = Direction.INPUT
+        new_input.pull = Pull.UP
+        id_inputs.append(new_input)
+
+    output = DigitalInOut(output_pin)
+	output.switchToOutput();
+
+    # Make the display context
+    context = displayio.Group(max_size=10)
+
+    #fonts
+    font9 = bitmap_font.load_font("/fonts/HelveticaNeue-9.bdf")
+    font18 = bitmap_font.load_font("/fonts/HelveticaNeue-18.bdf")
+    font24 = bitmap_font.load_font("/fonts/HelveticaNeue-Bold-24.bdf")
+
+    # background
+    background_group = displayio.Group(max_size=1)
+    background_bitmap = SolidBitmap()
+    background_palette = displayio.Palette(1)
+    background_palette[0] = 0x000000
+    background_sprite = displayio.TileGrid(background_bitmap, pixel_shader=background_palette)
+    background_group.append(background_sprite)
+
+    context.append(background_group)
+
+    sensors = []
+    sensor_digits = displayio.Group(max_size=len(sensor_pins), y=sensor_label_y)
+    digit_width = 0
+
+    for pin in sensor_pins:
+        new_sensor = DigitalInOut(pin[0])
+        new_sensor.direction = Direction.INPUT
+        new_sensor.pull = Pull.UP
+        sensors.append(new_sensor)
+
+        digit = Digit(font=font24, text=pin[1])
+        if digit_width == 0:
+			x, y, w, h = digit.get_bounding_box()
+            digit_width = w
+		digit.center_on_x((display.width/2) + pin[2] * digit_width)
+        sensor_digits.append(digit)
+
+    context.append(sensor_digits)
+
+    error_message = BetterLabel(font=font18, text="Filament Out!", color=0xFF0000, y=error_message_y, hidden=True)
+    context.append(error_message)
+
+    label_text = BetterLabel(font=font18, text="filament sensors", color=0xE0E0E0, y=label_text_y, hidden=True)
+    context.append(label_text)
+
+    machine_id = None
+    machine_name = None
+    sensors_in_use = None
+    current_states = [False, False, False, False, False]
+    filament_out = False
+	context_shown = False
+
+    while True:
+        current_id = (id_inputs[0].value) | (id_inputs[1].value << 1) | (id_inputs[2].value << 2) | (id_inputs[3].value << 3)
+
+        if current_id != machine_id:
+            machine_id = current_id
+            machine = machine_defs[machine_id]
+            sensors_in_use = machine[0]
+
+            if machine_name:
+                context.remove(machine_name)
+
+            machine_name = BetterLabel(font=font18, text=machine[1], color=0xFFFFFF, y=machine_name_y)
+            context.append(machine_name)
+
+            for uses_sensor, digit in zip(sensors_in_use, digits):
+                digit.active = uses_sensor == 1
+				digit.hidden = uses_sensor == -1
+
+        new_states = []
+        for uses_sensor, sensor in zip(sensors_in_use, sensors):
+            new_states.append(sensor.value and (uses_sensor == 1))
+
+        if new_states != current_states:
+            for state, digit in zip(new_states, digits):
+                digit.error = state
+            current_states = new_states
+
+        new_filament_out = True in current_states
+
+        if new_filament_out != filament_out:
+            filament_out = new_filament_out
+            output.value = filament_out
+			error_message.hidden = not filament_out
+			sensor_digits.y = sensor_digit_offset if filament_out else 0
+			label_text.hidden = filament_out
+
+		if not context_shown:
+		    display.show(context)
+			context_shown = True
+
+        time.sleep(0.01)
