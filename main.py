@@ -16,13 +16,25 @@ from digitalio import DigitalInOut, Direction, Pull
 minitft = minitft_featherwing.MiniTFTFeatherWing()
 display = minitft.display
 
+#---------------------------------------
+black_color = 0x000000
+
+machine_name_color = 0xFFFFFF
 machine_name_y = 13
-sensor_label_y = 47
-label_text_y 67
+
+error_color = 0xFFFFFF
 error_message_y = 67
 
-sensor_digit_offset = -7
+digit_color_inactive = 0x808080
+digit_color_active = 0x00FF00
+digit_color_error = error_color
+digit_y = 47
+digit_offset = -7
 
+label_color = 0xE0E0E0
+label_text_y 67
+
+#---------------------------------------
 machine_defs = [ \
     [[ 0,  0,  0,  0,  0, -1], "** NO TOOL **"], \
     [[ 0,  0,  1,  0,  0, -1], "V6"], \
@@ -54,6 +66,8 @@ id_pins = [board.MI, board.RX, board.TX, board.D4]
 output_pin = board.D2
 
 #---------------------------------------
+hidden_offset = 1000
+
 class BetterGroup(displayio.Group):
     def __init__(self, hidden=False, **kwargs):
         self.__hidden = False
@@ -72,17 +86,17 @@ class BetterGroup(displayio.Group):
 
     def _hide_offset(self):
         if self.__hidden:
-            return 1000
+            return hidden_offset
         else:
             return 0
 
     @property
     def x(self):
-        return super(BetterGroup,self).x % 1000
+        return super(BetterGroup,self).x % hidden_offset
 
     @x.setter
     def x(self, value):
-        super(BetterGroup, self.__class__).x.fset(self, (value % 1000) + self._hide_offset())
+        super(BetterGroup, self.__class__).x.fset(self, (value % hidden_offset) + self._hide_offset())
 
 class BetterLabel(label.Label):
     def __init__(self, hidden=False, **kwargs):
@@ -107,17 +121,17 @@ class BetterLabel(label.Label):
 
     def _hide_offset(self):
         if self.__hidden:
-            return 1000
+            return hidden_offset
         else:
             return 0
 
     @property
     def x(self):
-        return super(BetterLabel, self).x % 1000
+        return super(BetterLabel, self).x % hidden_offset
 
     @x.setter
     def x(self, value):
-        super(BetterLabel, self.__class__).x.fset(self, (value % 1000) + self._hide_offset())
+        super(BetterLabel, self.__class__).x.fset(self, (value % hidden_offset) + self._hide_offset())
 
     def bounding_box(self):
         x, y, w, h = super().bounding_box()
@@ -133,7 +147,7 @@ class Digit(BetterLabel):
         x, y, w, h = self.bounding_box()
 
         self.border_palette = displayio.Palette(2)
-        self.border_palette[0] = 0x000000
+        self.border_palette[0] = black_color
         self.border_palette[1] = self._border_color()
 
         border_bitmap = FrameBitmap(w+6, h+6, thickness=2)
@@ -160,17 +174,17 @@ class Digit(BetterLabel):
 
     def _current_color(self):
         if self.__error:
-            return 0xFF0000
+            return digit_color_error
         elif self.__active:
-            return 0xFFFFFF
+            return digit_color_active
         else:
-            return 0x808080
+            return digit_color_inactive
 
     def _border_color(self):
         if self.__error:
-            return 0xFF0000
+            return digit_color_error
         else:
-            return 0x000000
+            return black_color
 
     def _update_color(self):
         self.color = self._current_color()
@@ -227,17 +241,15 @@ if __name__ == '__main__':
     font24 = bitmap_font.load_font("/fonts/HelveticaNeue-Bold-24.bdf")
 
     # background
-    background_group = displayio.Group(max_size=1)
     background_bitmap = SolidBitmap()
     background_palette = displayio.Palette(1)
-    background_palette[0] = 0x000000
+    background_palette[0] = black_color
     background_sprite = displayio.TileGrid(background_bitmap, pixel_shader=background_palette)
-    background_group.append(background_sprite)
 
-    context.append(background_group)
+    context.append(background_sprite)
 
     sensors = []
-    sensor_digits = displayio.Group(max_size=len(sensor_pins), y=sensor_label_y)
+    sensor_digits = displayio.Group(max_size=len(sensor_pins), y=digit_y)
     digit_width = 0
 
     for pin in sensor_pins:
@@ -255,10 +267,10 @@ if __name__ == '__main__':
 
     context.append(sensor_digits)
 
-    error_message = BetterLabel(font=font18, text="Filament Out!", color=0xFF0000, y=error_message_y, hidden=True)
+    error_message = BetterLabel(font=font18, text="Filament Out!", color=error_color, y=error_message_y, hidden=True)
     context.append(error_message)
 
-    label_text = BetterLabel(font=font18, text="filament sensors", color=0xE0E0E0, y=label_text_y, hidden=True)
+    label_text = BetterLabel(font=font9, text="filament sensors", color=label_color, y=label_text_y, hidden=True)
     context.append(label_text)
 
     machine_id = None
@@ -267,6 +279,7 @@ if __name__ == '__main__':
     current_states = [False, False, False, False, False]
     filament_out = False
 	context_shown = False
+	active_sensor_count = 0
 
     while True:
         current_id = (id_inputs[0].value) | (id_inputs[1].value << 1) | (id_inputs[2].value << 2) | (id_inputs[3].value << 3)
@@ -279,12 +292,16 @@ if __name__ == '__main__':
             if machine_name:
                 context.remove(machine_name)
 
-            machine_name = BetterLabel(font=font18, text=machine[1], color=0xFFFFFF, y=machine_name_y)
+            machine_name = BetterLabel(font=font18, text=machine[1], color=machine_name_color, y=machine_name_y)
             context.append(machine_name)
 
+			active_sensor_count = 0
             for uses_sensor, digit in zip(sensors_in_use, digits):
                 digit.active = uses_sensor == 1
 				digit.hidden = uses_sensor == -1
+
+				if digit.active:
+					active_sensor_count++
 
         new_states = []
         for uses_sensor, sensor in zip(sensors_in_use, sensors):
@@ -301,8 +318,8 @@ if __name__ == '__main__':
             filament_out = new_filament_out
             output.value = filament_out
 			error_message.hidden = not filament_out
-			sensor_digits.y = sensor_digit_offset if filament_out else 0
-			label_text.hidden = filament_out
+			sensor_digits.y = digit_offset if filament_out else 0
+			label_text.hidden = filament_out or active_sensor_count == 0
 
 		if not context_shown:
 		    display.show(context)
