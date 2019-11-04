@@ -189,14 +189,6 @@ class Digit(BetterLabel):
 		self.border_palette[1] = self._border_color()
 
 #---------------------------------------
-def time_in_millis():
-	now = datetime.now(timezone.utc)
-	epoch = datetime(1970, 1, 1, tzinfo=timezone.utc) # use POSIX epoch
-	posix_timestamp_micros = (now - epoch) // timedelta(microseconds=1)
-	posix_timestamp_millis = posix_timestamp_micros / 1e3
-	return posix_timestamp_millis
-
-#---------------------------------------
 if __name__ == '__main__':
 	led.brightness = 0.005
 	led[0] = black_color
@@ -293,7 +285,7 @@ if __name__ == '__main__':
 
 		new_states = []
 		for uses_sensor, sensor in zip(sensors_in_use, sensors):
-			new_states.append(sensor.value == 0 and uses_sensor == 1)
+			new_states.append(uses_sensor == 1 and sensor.value == 0)
 
 		if new_states != current_states:
 			for state, digit in zip(new_states, sensor_digits):
