@@ -14,8 +14,12 @@ from adafruit_bitmap_font import bitmap_font
 
 from digitalio import DigitalInOut, Direction, Pull
 
+import neopixel
+
 minitft = minitft_featherwing.MiniTFTFeatherWing()
 display = minitft.display
+
+led = neopixel.NeoPixel(board.NEOPIXEL, 1)
 
 #---------------------------------------
 black_color = 0x000000
@@ -30,7 +34,6 @@ digit_color_inactive = 0x808080
 digit_color_active = 0x00FF1A
 digit_color_error = error_color
 digit_y = 40
-digit_offset = 0
 
 label_color = 0xFFFFFF
 label_text_y = 71
@@ -50,7 +53,7 @@ machine_defs = [ \
 	[[-1, -1, -1, -1, -1, -1], 24, "invalid\ntool id"], \
 	[[ 1,  1,  1,  1,  1, -1], 18, "Diamond Color"], \
 	[[-1, -1, -1, -1, -1,  1], 24, "Titan Aero"], \
-	[[-1, -1, -1, -1, -1,  1], 24, "Dyze Design"], \
+	[[-1, -1, -1, -1, -1,  1], 18, "Dyze Design"], \
 	[[-1, -1, -1, -1, -1, -1], 24, "invalid\ntool id"], \
 	[[-1, -1, -1, -1, -1, -1], 24, "invalid\ntool id"], \
 	[[-1, -1, -1, -1, -1, -1], 24, "invalid\ntool id"], \
@@ -58,43 +61,36 @@ machine_defs = [ \
 	[[-1, -1, -1, -1, -1, -1], 24, "Nozzle\nSetup"]]
 
 sensor_pins = [ \
-	[board.A0, "1", -2], \
-	[board.A1, "2", -1], \
-	[board.A2, "3", 0], \
-	[board.A3, "4", 1], \
-	[board.A4, "5", 2], \
-	[board.A5, "Auxilary", 0]]
+	[board.A1, "1", -2], \
+	[board.A2, "2", -1], \
+	[board.A3, "3", 0], \
+	[board.A4, "4", 1], \
+	[board.A5, "5", 2], \
+	[board.A0, "Auxilary", 0]]
 
 id_pins = [board.D10, board.RX, board.TX, board.D4]
 
 output_pin = board.D9
 
 #---------------------------------------
-hidden_offset = 1000
 
-class BetterGroup(displayio.Group):
-	def hide(self):
-		self.x = (self.x % hidden_offset) + hidden_offset
+class Hideable(object):
+	hidden_offset = 1000
 
-	def show(self):
-		self.x = self.x % hidden_offset
-
-	def set_hide(self, hidden):
-		if hidden:
-			self.hide()
-		else:
-			self.show()
-
-class BetterLabel(label.Label):
 	def center_on_x(self, center_x = display.width / 2):
-		w = self.bounding_box[2]
-		self.x = int(center_x - w / 2);
+		new_x = int(center_x - self.bounding_box[2] / 2)
+		if self.x != new_x:
+			self.x = new_x
 
 	def hide(self):
-		self.x = (self.x % hidden_offset) + hidden_offset
+		new_x = (self.x % self.hidden_offset) + self.hidden_offset
+		if self.x != new_x:
+			self.x =new_x
 
 	def show(self):
-		self.x = self.x % hidden_offset
+		new_x = self.x % self.hidden_offset
+		if self.x != new_x:
+			self.x = new_x
 
 	def set_hide(self, hidden):
 		if hidden:
@@ -102,26 +98,18 @@ class BetterLabel(label.Label):
 		else:
 			self.show()
 
-def fill_borders(bitmap, thickness):
-	w = bitmap.width
-	h = bitmap.height
+class BetterGroup(displayio.Group, Hideable):
+	pass
 
-	for i in range(w):
-		for j in range(thickness):
-			bitmap[i, j] = 1
-			bitmap[i, h-1-j] = 1
-
-	for j in range(h):
-		for i in range(thickness):
-			bitmap[i, j] = 1
-			bitmap[w-1-i, j] = 1
+class BetterLabel(label.Label, Hideable):
+	pass
 
 class Digit(BetterLabel):
 	def __init__(self, text="*", font=None, active=True, error=False, **kwargs):
 		self.__active = active
 		self.__error = error
 		self.__blink = True
-		super().__init__(font, text=text, max_glyphs=len(text)+1, color=self._current_color(), **kwargs)
+		super().__init__(font, text=text, max_glyphs=len(text)+1, color=self._digit_color(), **kwargs)
 
 		self.y = 0
 		bounds = self.bounding_box
@@ -130,12 +118,26 @@ class Digit(BetterLabel):
 
 		self.border_palette = displayio.Palette(2)
 		self.border_palette[0] = black_color
-		self.border_palette[1] = 0x00FFFF #self._border_color()
+		self.border_palette[1] = black_color
 
 		border_bitmap = displayio.Bitmap(w+9, h+8, 2)
-		fill_borders(border_bitmap, 2)
+		self._fill_borders(border_bitmap, 2)
 		border_sprite = displayio.TileGrid(border_bitmap, pixel_shader=self.border_palette, x=-4, y=int(-h/2-4))
 		self.insert(0, border_sprite)
+
+	def _fill_borders(self, bitmap, thickness):
+		w = bitmap.width
+		h = bitmap.height
+
+		for i in range(w):
+			for j in range(thickness):
+				bitmap[i, j] = 1
+				bitmap[i, h-1-j] = 1
+
+		for j in range(h):
+			for i in range(thickness):
+				bitmap[i, j] = 1
+				bitmap[w-1-i, j] = 1
 
 	@property
 	def blink(self):
@@ -164,7 +166,7 @@ class Digit(BetterLabel):
 		self.__error = value
 		self._update_color()
 
-	def _current_color(self):
+	def _digit_color(self):
 		if not self.blink:
 			return black_color
 		elif self.__error:
@@ -183,9 +185,10 @@ class Digit(BetterLabel):
 			return black_color
 
 	def _update_color(self):
-		self.color = self._current_color()
+		self.color = self._digit_color()
 		self.border_palette[1] = self._border_color()
 
+#---------------------------------------
 def time_in_millis():
 	now = datetime.now(timezone.utc)
 	epoch = datetime(1970, 1, 1, tzinfo=timezone.utc) # use POSIX epoch
@@ -195,7 +198,8 @@ def time_in_millis():
 
 #---------------------------------------
 if __name__ == '__main__':
-	blink_time = 0
+	led.brightness = 0.005
+	led[0] = black_color
 
 	id_inputs = []
 	for pin in id_pins:
@@ -230,8 +234,7 @@ if __name__ == '__main__':
 
 		digit = Digit(font=font36, text=pin[1])
 		if digit_width == 0:
-			bounds = digit.bounding_box
-			digit_width = bounds[2]
+			digit_width = digit.bounding_box[2]
 		digit.center_on_x((display.width/2) + pin[2] * (digit_width+20))
 		sensor_digits.append(digit)
 
@@ -254,13 +257,13 @@ if __name__ == '__main__':
 	context_shown = False
 	active_sensor_count = 0
 	blink_state = True
+	blink_time = 0
 
 	while True:
 		current_id = 0
-
-		for i, input in zip(range(4), id_inputs):
+		for input, bit in zip(id_inputs, [1, 2, 4, 8]):
 			if input.value == 0:
-				current_id += 1 << i
+				current_id += bit
 
 		if current_id != machine_id:
 			machine_id = current_id
@@ -290,7 +293,7 @@ if __name__ == '__main__':
 
 		new_states = []
 		for uses_sensor, sensor in zip(sensors_in_use, sensors):
-			new_states.append(sensor.value == 0 and (uses_sensor == 1))
+			new_states.append(sensor.value == 0 and uses_sensor == 1)
 
 		if new_states != current_states:
 			for state, digit in zip(new_states, sensor_digits):
@@ -303,7 +306,7 @@ if __name__ == '__main__':
 			filament_out = new_filament_out
 			output.value = filament_out
 			error_message.set_hide(not filament_out)
-			sensor_digits.y = digit_y+digit_offset if filament_out else digit_y
+			led[0] = digit_color_error if filament_out else digit_color_active
 			label_text.set_hide(filament_out or active_sensor_count == 0 or shown_sensor_count == 1)
 			for digit in sensor_digits:
 				digit.blink = True
